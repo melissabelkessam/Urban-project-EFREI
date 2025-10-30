@@ -1,11 +1,11 @@
 import requests
 from pathlib import Path
 
-# === Étape 1 : définir le dossier de destination ===
+
 bronze_path = Path(__file__).resolve().parents[2] / "data" / "Bronze"
 bronze_path.mkdir(parents=True, exist_ok=True)
 
-# === Étape 2 : dictionnaire contenant les liens DVF officiels ===
+
 urls = {
     2022: "https://static.data.gouv.fr/resources/demandes-de-valeurs-foncieres/20251018-234844/valeursfoncieres-2022.txt.zip",
     2023: "https://static.data.gouv.fr/resources/demandes-de-valeurs-foncieres/20251018-234851/valeursfoncieres-2023.txt.zip",
@@ -13,7 +13,7 @@ urls = {
     2025: "https://static.data.gouv.fr/resources/demandes-de-valeurs-foncieres/20251018-234902/valeursfoncieres-2025-s1.txt.zip",
 }
 
-# === Étape 3 : téléchargement automatique ===
+
 for year, url in urls.items():
     output_file = bronze_path / f"dvf_75_{year}.zip"
     print(f"⏳ Téléchargement DVF {year} ...")
