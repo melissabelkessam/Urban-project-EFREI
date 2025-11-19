@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Urban Data Explorer - Carte des prix au m²</title>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
+    />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="app-container">
+      <!-- HEADER -->
+      <header class="app-header">
+        <div class="logo-block">
+          <div class="logo-square">UD</div>
+          <span class="title">URBAN DATA EXPLORER</span>
+        </div>
+        <div class="header-right">
+          <span class="header-subtitle">Carte des prix au m² à Paris</span>
+        </div>
+      </header>
+
+      <!-- CONTENU PRINCIPAL -->
+      <main class="layout">
+        <!-- COLONNE GAUCHE : CONTROLES + KPIs -->
+        <section class="left-panel">
+          <!-- Sélecteur d'arrondissement -->
+          <div class="control-block">
+            <label for="arr-select" class="control-label">Arrondissement :</label>
+            <select id="arr-select" class="select-input">
+              <!-- options remplies en JS -->
+            </select>
+          </div>
+
+          <!-- Slider d'année -->
+          <div class="control-block year-block">
+            <div class="year-header">
+              <button id="year-prev" class="year-arrow">&#8249;</button>
+              <span>Année :</span>
+              <span id="year-display" class="year-display">-</span>
+              <button id="year-next" class="year-arrow">&#8250;</button>
+            </div>
+            <input
+              type="range"
+              id="year-slider"
+              min="2000"
+              max="2025"
+              step="1"
+              value="2025"
+            />
+          </div>
+
+          <!-- KPIs PRINCIPAUX -->
+          <div class="kpi-block">
+            <div class="kpi-card">
+              <div class="kpi-label">Prix/m² médian</div>
+              <div id="kpi-prix" class="kpi-value">-</div>
+              <div id="kpi-ventes" class="kpi-sub">Nombre de ventes : -</div>
+            </div>
+
+            <div class="kpi-card">
+              <div class="kpi-label">Logements sociaux (programmes)</div>
+              <div id="kpi-log" class="kpi-value">-</div>
+              <div id="kpi-log-sub" class="kpi-sub">
+                Programmes dans l'année sélectionnée
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- COLONNE DROITE : CARTE -->
+        <section class="map-panel">
+          <div id="map"></div>
+        </section>
+      </main>
+    </div>
+
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+    ></script>
+    <script src="script.js"></script>
+  </body>
+</html>
