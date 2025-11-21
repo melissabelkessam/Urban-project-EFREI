@@ -243,12 +243,27 @@ function drawPolygons() {
 
 // === Leaflet init
 function initMap() {
-  map = L.map("map", { preferCanvas: false }).setView([48.8566, 2.3522], 12);
+  map = L.map("map", {
+    preferCanvas: false,
+    minZoom: 12,     // 🔒 empêche de trop dézoomer
+    maxZoom: 18,     // 🔒 limite le zoom maximum
+    zoomControl: true
+  }).setView([48.8566, 2.3522], 13); // zoom centré sur Paris
 
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 19,
-    attribution: "&copy; OpenStreetMap contributors",
-  }).addTo(map);
+  // Fond de carte
+  L.tileLayer('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=', {
+    minZoom: 12,
+    maxZoom: 18
+}).addTo(map);
+
+
+  // 🔒 Empêcher la carte de sortir de Paris
+  const parisBounds = L.latLngBounds(
+    [48.815, 2.22], // Sud-Ouest de Paris
+    [48.90, 2.42]   // Nord-Est de Paris
+  );
+  map.setMaxBounds(parisBounds);
+  map.setMinZoom(12);
 
   markersLayer = L.layerGroup().addTo(map);
 }

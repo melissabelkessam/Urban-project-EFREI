@@ -1,31 +1,27 @@
 import pandas as pd
-from pathlib import Path
 
-ROOT_DIR = Path(__file__).resolve().parents[3]
-DATA_DIR = ROOT_DIR / "data"
-SILVER = DATA_DIR / "Silver"
-GOLD = DATA_DIR / "Gold"
+# Charger Silver
+df = pd.read_csv("../data/Silver/delinquance_paris.csv")
 
-def build_delinquance():
-    print("🔄 Construction de l'indicateur : délinquance...")
+# Extraire le numéro d'arrondissement : 
+# CODGEO_2025 contient un code INSEE comme 75101, 75115 etc.
+df["arrondissement"] = df["CODGEO_2025"].astype(str).str[-2:].astype(int)
 
-    df = pd.read_csv(SILVER / "delinquance_paris.csv")
+# Garder seulement les colonnes utiles
+df = df[["arrondissement", "annee", "nombre"]]
 
-    df["arrondissement"] = pd.to_numeric(df["arrondissement"], errors="coerce")
-    df["annee"] = pd.to_numeric(df["annee"], errors="coerce")
+# Agréger : somme de tous les délits par arrondissement et année
+df_agg = df.groupby(["arrondissement", "annee"])["nombre"].sum().reset_index()
 
-    df = df.dropna(subset=["arrondissement", "annee"])
+# Normalisation par année (score entre 0 et 10)
+df_agg["score_delinquance"] = df_agg.groupby("annee")["nombre"].transform(
+    lambda x: (x / x.max()) * 10
+).round(1)
 
-    grouped = (
-        df.groupby(["arrondissement", "annee"])
-        .agg(nb_delits=("nb_delits", "sum"))
-        .reset_index()
-    )
+# Colonnes finales
+df_final = df_agg[["arrondissement", "annee", "score_delinquance"]]
 
-    output = GOLD / "delinquance.csv"
-    grouped.to_csv(output, index=False)
+# Export vers Gold
+df_final.to_csv("../data/Gold/delinquance.csv", index=False)
 
-    print(f"✅ Fichier GOLD créé : {output}")
-
-if __name__ == "__main__":
-    build_delinquance()
+print("Gold délinquance : OK ✔")
