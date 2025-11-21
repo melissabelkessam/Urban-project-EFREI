@@ -1,12 +1,15 @@
 import pandas as pd
+from pathlib import Path
 
-# --- Fichiers source et sortie ---
-fichier = "data/silver/delinquance_paris.csv"
-fichier_sortie = "data/silver/densite_paris.csv"
+# --- Définition des chemins absolus ---
+ROOT = Path(__file__).resolve().parents[2]   # remonte jusqu'à URBAN DATA EFREI
+SILVER = ROOT / "data" / "Silver"
+
+fichier = SILVER / "delinquance_paris.csv"
+fichier_sortie = SILVER / "densite_paris.csv"
 
 # Lecture du CSV
 df = pd.read_csv(fichier, sep=",", encoding="utf-8-sig")
-
 
 # Surface des arrondissements en km²
 surface_arrondissements = {
@@ -15,17 +18,19 @@ surface_arrondissements = {
     15: 8.50, 16: 16.34, 17: 5.67, 18: 6.01, 19: 6.79, 20: 5.98
 }
 
-# Ajouter numéro arrondissement à partir du code INSEE
+# Extraire numéro d'arrondissement à partir du code INSEE
 df["arrondissement"] = df["CODGEO_2025"].astype(str).str[2:4].astype(int)
 
-# Calcul densité
+# Calcul de la densité
 df["densite_hab_km2"] = df.apply(
     lambda x: x["insee_pop"] / surface_arrondissements.get(x["arrondissement"], 1),
     axis=1
 )
 
-# Garder uniquement les colonnes souhaitées
+# Colonnes finales
 df_final = df[["CODGEO_2025", "arrondissement", "insee_pop", "densite_hab_km2", "annee"]]
-# Sauvegarde dans un nouveau fichier CSV
+
+# Sauvegarde dans Silver
 df_final.to_csv(fichier_sortie, index=False, encoding="utf-8-sig")
 
+print(f"✅ Densité enregistrée dans : {fichier_sortie}")

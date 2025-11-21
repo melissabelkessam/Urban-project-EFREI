@@ -1,14 +1,14 @@
 import pandas as pd
 from pathlib import Path
 
-# Détecter la racine du projet automatiquement
-# silver_pipeline.py → pipeline_nettoyage → pipeline → api → racine
-ROOT_DIR = Path(__file__).resolve().parents[3]
+# Détecter correctement la racine du projet
+# silver_pipeline.py → pipeline_nettoyage → pipeline → racine
+ROOT = Path(__file__).resolve().parents[2]   # ✔️ CORRECT
 
 # Dossiers data
-DATA_DIR = ROOT_DIR / "data"
-BRONZE = DATA_DIR / "Bronze"
-SILVER = DATA_DIR / "Silver"
+DATA = ROOT / "data"
+BRONZE = DATA / "Bronze"
+SILVER = DATA / "Silver"
 
 
 def clean_dvf():
@@ -18,7 +18,7 @@ def clean_dvf():
     mapping_path = SILVER / "code_postal_arr.csv"
 
     # Charger DVF
-    df = pd.read_csv(dvf_path)
+    df = pd.read_csv(dvf_path, encoding="utf-8-sig")
 
     # Convertir les types
     df["valeur_fonciere"] = pd.to_numeric(df["valeur_fonciere"], errors="coerce")
@@ -33,21 +33,21 @@ def clean_dvf():
     df["annee"] = df["date_mutation"].dt.year
 
     # Charger mapping code_postal -> arrondissement
-    mapping = pd.read_csv(mapping_path)
+    mapping = pd.read_csv(mapping_path, encoding="utf-8-sig")
 
     # Fusion DVF + mapping
     df = df.merge(mapping, on="code_postal", how="left")
 
     # Alerte si certaines lignes n'ont pas trouvé d'arrondissement
     if df["code_arrondissement"].isna().sum() > 0:
-        print("⚠️ Certains codes postaux n'ont pas trouvé leur arrondissement !")
+        print("⚠️ Certains codes postaux n'ont PAS trouvé leur arrondissement !")
 
     # Renommer la colonne
     df = df.rename(columns={"code_arrondissement": "arrondissement"})
 
     # Sauvegarde du fichier Silver propre
     output_path = SILVER / "dvf_ready.csv"
-    df.to_csv(output_path, index=False)
+    df.to_csv(output_path, index=False, encoding="utf-8-sig")
 
     print(f"✅ DVF Silver nettoyé → {output_path}")
 

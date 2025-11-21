@@ -2,9 +2,13 @@ import json
 import pandas as pd
 from pathlib import Path
 
-# --- chemins ---
-raw_path = Path("data/Bronze/arrondissements_raw.json")
-clean_path = Path("data/Silver/arrondissements_clean.csv")
+# --- chemins absolus basés sur l'architecture du projet ---
+ROOT = Path(__file__).resolve().parents[2]   # remonte jusqu'à URBAN DATA EFREI
+BRONZE = ROOT / "data" / "Bronze"
+SILVER = ROOT / "data" / "Silver"
+
+raw_path = BRONZE / "arrondissements_raw.json"
+clean_path = SILVER / "arrondissements_clean.csv"
 
 # --- lecture du JSON brut ---
 with open(raw_path, "r", encoding="utf-8") as f:
@@ -17,13 +21,14 @@ clean_data = []
 for r in records:
     fields = r.get("fields", {})
     geom = fields.get("geom_x_y", [None, None])
+
     clean_data.append({
         "code_arrondissement": fields.get("c_ar"),
         "nom_officiel": fields.get("l_aroff"),
         "nom": fields.get("l_ar"),
         "surface_m2": fields.get("surface"),
         "coord_x": geom[1],
-        "coord_y": geom[0]
+        "coord_y": geom[0],
     })
 
 # --- conversion en DataFrame ---

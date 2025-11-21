@@ -3,14 +3,14 @@ from pathlib import Path
 
 # -----------------------------------------------------
 # Détecter correctement la racine du projet
-# gold_pipeline.py → pipeline_nettoyage → pipeline → api → racine (3 parents)
+# gold_pipeline.py → pipeline_nettoyage → pipeline → racine (2 parents)
 # -----------------------------------------------------
-ROOT_DIR = Path(__file__).resolve().parents[3]
+ROOT = Path(__file__).resolve().parents[2]   # ✔️ CORRECT !
 
 # Dossiers data
-DATA_DIR = ROOT_DIR / "data"
-SILVER = DATA_DIR / "Silver"
-GOLD = DATA_DIR / "Gold"
+DATA = ROOT / "data"
+SILVER = DATA / "Silver"
+GOLD = DATA / "Gold"
 
 
 def build_prix_m2_par_arrondissement():
@@ -19,7 +19,7 @@ def build_prix_m2_par_arrondissement():
     dvf_path = SILVER / "dvf_ready.csv"
 
     # Charger DVF nettoyé
-    df = pd.read_csv(dvf_path)
+    df = pd.read_csv(dvf_path, encoding="utf-8-sig")
 
     # Calcul du prix au m²
     df["prix_m2"] = df["valeur_fonciere"] / df["surface_reelle_bati"]
@@ -36,7 +36,8 @@ def build_prix_m2_par_arrondissement():
 
     # Sauvegarde dans data/Gold
     output_path = GOLD / "prix_m2_par_arrondissement.csv"
-    grouped.to_csv(output_path, index=False)
+    GOLD.mkdir(parents=True, exist_ok=True)
+    grouped.to_csv(output_path, index=False, encoding="utf-8-sig")
 
     print(f"✅ Fichier GOLD créé : {output_path}")
 

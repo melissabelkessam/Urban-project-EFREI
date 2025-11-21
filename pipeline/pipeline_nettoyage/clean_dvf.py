@@ -1,10 +1,15 @@
 import pandas as pd
 import csv
 import io
+from pathlib import Path
 
-# --- Fichiers source et sortie ---
-fichier = "data/Bronze/dvf_cleaned.csv"
-fichier_sortie = "data/silver/dvf_final.csv"
+# --- Définition des chemins absolus ---
+ROOT = Path(__file__).resolve().parents[2]   # remonte jusqu'à "URBAN DATA EFREI"
+BRONZE = ROOT / "data" / "Bronze"
+SILVER = ROOT / "data" / "Silver"
+
+fichier = BRONZE / "dvf_cleaned.csv"
+fichier_sortie = SILVER / "dvf_final.csv"
 
 # --- Étape 1 : Lecture brute et réparation des guillemets doublés ---
 with open(fichier, "r", encoding="utf-8-sig") as f:
@@ -32,9 +37,12 @@ df = pd.read_csv(
     on_bad_lines="skip"
 )
 
-# --- Étape 4 : Nettoyage léger ---
+# --- Étape 4 : Nettoyage des caractères ---
 df = df.applymap(lambda x: x.strip() if isinstance(x, str) else x)
-df = df.replace({'Ã©': 'é', 'Ã¨': 'è', 'Ã¢': 'â', 'Ã´': 'ô', 'Ãª': 'ê', 'Ã': 'à'}, regex=True)
+df = df.replace(
+    {'Ã©': 'é', 'Ã¨': 'è', 'Ã¢': 'â', 'Ã´': 'ô', 'Ãª': 'ê', 'Ã': 'à'},
+    regex=True
+)
 
 # --- Étape 5 : Conversion des types numériques ---
 colonnes_numeriques = [
@@ -53,27 +61,35 @@ for col in colonnes_numeriques:
         )
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
+# Conversion date
 if "date_mutation" in df.columns:
     df["date_mutation"] = pd.to_datetime(df["date_mutation"], errors="coerce")
 
 # --- Étape 6 : Filtrage ---
 df = df[df["valeur_fonciere"].notna() & (df["valeur_fonciere"] > 0)]
+
 # --- Prix au m² ---
-df['prix_m2'] = df['valeur_fonciere'] / df['surface_reelle_bati']
-# --- Ajout d'année de mutation ---
-df['annee'] = pd.to_datetime(df['date_mutation']).dt.year
-# --- Ajout d'arrondissement ---
-df['arrondissement'] = df['code_postal'].astype(str).str[-2:]
+df["prix_m2"] = df["valeur_fonciere"] / df["surface_reelle_bati"]
 
-# --- Type simplifié du logement
-df['type_local_simple'] = df['type_local'].str.capitalize()
-# ---- Catégorie par nombre de pièces
+# --- Année de mutation ---
+df["annee"] = pd.to_datetime(df["date_mutation"]).dt.year
+
+# --- Extraction arrondissement ---
+df["arrondissement"] = df["code_postal"].astype(str).str[-2:]
+
+# --- Type simplifié de logement ---
+df["type_local_simple"] = df["type_local"].str.capitalize()
+
+# --- Catégorie par nombre de pièces ---
 def categorie_pieces(x):
-    if x <= 2: return 'Petit'
-    elif x <= 4: return 'Moyen'
-    else: return 'Grand'
+    if x <= 2:
+        return "Petit"
+    elif x <= 4:
+        return "Moyen"
+    else:
+        return "Grand"
 
-df['categorie_pieces'] = df['nombre_pieces_principales'].apply(categorie_pieces)
+df["categorie_pieces"] = df["nombre_pieces_principales"].apply(categorie_pieces)
 
 # --- Étape 7 : Résumé ---
 print("\n🧾 Aperçu des données nettoyées :")
@@ -82,5 +98,7 @@ print(f"\n✅ Nombre de lignes : {len(df)}")
 print(f"✅ Nombre de colonnes : {len(df.columns)}")
 
 # --- Étape 8 : Sauvegarde ---
+SILVER.mkdir(parents=True, exist_ok=True)
 df.to_csv(fichier_sortie, index=False, encoding="utf-8-sig")
+
 print(f"✅ Fichier nettoyé sauvegardé dans {fichier_sortie}")

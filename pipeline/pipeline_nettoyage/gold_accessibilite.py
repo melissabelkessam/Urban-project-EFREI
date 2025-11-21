@@ -3,13 +3,13 @@ from pathlib import Path
 
 # -----------------------------------------------------
 # Détection de la racine du projet
-# (gold_accessibilite.py → pipeline_nettoyage → pipeline → api → racine)
+# (gold_accessibilite.py → pipeline_nettoyage → pipeline → racine)
 # -----------------------------------------------------
-ROOT_DIR = Path(__file__).resolve().parents[3]
+ROOT = Path(__file__).resolve().parents[2]   # ✔️ bon emplacement
 
-DATA_DIR = ROOT_DIR / "data"
-SILVER = DATA_DIR / "Silver"
-GOLD = DATA_DIR / "Gold"
+DATA = ROOT / "data"
+SILVER = DATA / "Silver"
+GOLD = DATA / "Gold"
 
 
 def build_accessibilite():
@@ -22,17 +22,15 @@ def build_accessibilite():
     revenus = pd.read_csv(SILVER / "revenus_paris.csv")
 
     # -----------------------------------------------------
-    # 🔧 Nettoyage automatique : conversion en numérique
+    # 🔧 Conversion en numérique
     # -----------------------------------------------------
     for col in ["arrondissement", "annee"]:
         prix[col] = pd.to_numeric(prix[col], errors="coerce")
         revenus[col] = pd.to_numeric(revenus[col], errors="coerce")
 
-    # Supprimer les lignes invalides
-    prix = prix.dropna(subset=["arrondissement", "annee"])
-    revenus = revenus.dropna(subset=["arrondissement", "annee"])
+    prix.dropna(subset=["arrondissement", "annee"], inplace=True)
+    revenus.dropna(subset=["arrondissement", "annee"], inplace=True)
 
-    # Convertir en entiers
     prix["arrondissement"] = prix["arrondissement"].astype(int)
     prix["annee"] = prix["annee"].astype(int)
 
@@ -44,20 +42,21 @@ def build_accessibilite():
     # -----------------------------------------------------
     merged = prix.merge(revenus, on=["arrondissement", "annee"], how="left")
 
-    # Vérifier si des revenus manquent
     if merged["revenu_median"].isna().sum() > 0:
-        print("⚠️ Attention : revenus manquants pour certains arrondissements/années")
+        print("⚠️ Revenus manquants pour certaines combinaisons arrondissement/année")
 
     # -----------------------------------------------------
-    # 📊 Calcul du ratio prix/revenu
+    # 📊 Calcul ratio prix/revenu
     # -----------------------------------------------------
-    merged["ratio_prix_revenu"] = merged["prix_m2_median"] / merged["revenu_median"]
+    merged["ratio_prix_revenu"] = (
+        merged["prix_m2_median"] / merged["revenu_median"]
+    )
 
     # -----------------------------------------------------
     # 💾 Sauvegarde Gold
     # -----------------------------------------------------
     output = GOLD / "accessibilite.csv"
-    merged.to_csv(output, index=False)
+    merged.to_csv(output, index=False, encoding="utf-8-sig")
 
     print(f"✅ Fichier GOLD créé : {output}")
 
