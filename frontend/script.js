@@ -1,393 +1,453 @@
-// URL de ton API FastAPI
 const API_BASE = "http://127.0.0.1:8000";
 
-// === Sélecteurs DOM ===
-const arrSelect = document.getElementById("arr-select");
-const yearSlider = document.getElementById("year-slider");
+// ── DOM refs ──────────────────────────────────────────────────────────────────
+const arrSelect   = document.getElementById("arr-select");
+const yearSlider  = document.getElementById("year-slider");
 const yearDisplay = document.getElementById("year-display");
-const yearPrev = document.getElementById("year-prev");
-const yearNext = document.getElementById("year-next");
+const yearPrev    = document.getElementById("year-prev");
+const yearNext    = document.getElementById("year-next");
+const kpiPrix     = document.getElementById("kpi-prix");
+const kpiVentes   = document.getElementById("kpi-ventes");
+const kpiLog      = document.getElementById("kpi-log");
 
-const kpiPrix = document.getElementById("kpi-prix");
-const kpiVentes = document.getElementById("kpi-ventes");
-const kpiLog = document.getElementById("kpi-log");
+// ── État global ───────────────────────────────────────────────────────────────
+let map, markersLayer, polygonsLayer, highlighted, geojsonData;
+let arrMeta = [], prixData = [], logData = [], delinquanceData = [];
+let densiteData = [], vacanceData = [], typologieData = [];
+let years = [], currentArr = null, currentYear = null;
+let choroplethMode = "prix"; // "prix" ou "arr"
+let currentMode = "explore";
+let timelineInterval = null;
+let chartEvolution = null;
+let chartTimeline = null;
 
-// === État global ===
-let map;
-let markersLayer;
-
-let arrMeta = [];
-let prixData = [];
-let logData = [];
-let delinquanceData = [];
-let densiteData = [];
-let vacanceData = [];
-let typologieData = [];
-
-let years = [];
-let currentArr = null;
-let currentYear = null;
-
-let polygonsLayer;
-let highlighted = null;
-let geojsonData = null;
-
-// === Palette 20 couleurs (1 couleur par arrondissement)
+// ── Palette couleurs par arrondissement ───────────────────────────────────────
 const ARR_COLORS = {
-  1: "#3b82f6",
-  2: "#6366f1",
-  3: "#10b981",
-  4: "#14b8a6",
-  5: "#f59e0b",
-  6: "#ef4444",
-  7: "#8b5cf6",
-  8: "#0ea5e9",
-  9: "#22c55e",
-  10: "#e11d48",
-  11: "#f97316",
-  12: "#0d9488",
-  13: "#16a34a",
-  14: "#7c3aed",
-  15: "#ea580c",
-  16: "#4f46e5",
-  17: "#06b6d4",
-  18: "#84cc16",
-  19: "#d946ef",
-  20: "#475569"
+  1:"#3b82f6",2:"#6366f1",3:"#10b981",4:"#14b8a6",5:"#f59e0b",
+  6:"#ef4444",7:"#8b5cf6",8:"#0ea5e9",9:"#22c55e",10:"#e11d48",
+  11:"#f97316",12:"#0d9488",13:"#16a34a",14:"#7c3aed",15:"#ea580c",
+  16:"#4f46e5",17:"#06b6d4",18:"#84cc16",19:"#d946ef",20:"#475569"
 };
 
-// === Utils simples pour foncer/saturer une couleur (hover/sélection)
-function darken(color, amount = 0.2) {
-  let c = parseInt(color.slice(1), 16);
-  let r = (c >> 16) - 255 * amount;
-  let g = ((c >> 8) & 0xff) - 255 * amount;
-  let b = (c & 0xff) - 255 * amount;
-  r = Math.max(0, r);
-  g = Math.max(0, g);
-  b = Math.max(0, b);
-  return `rgb(${r},${g},${b})`;
+// ── Palette choroplèthe prix ──────────────────────────────────────────────────
+const PRICE_BREAKS = [
+  { max: 8000,  color: "#1e3a5f" },
+  { max: 9000,  color: "#1d4ed8" },
+  { max: 10000, color: "#0891b2" },
+  { max: 11000, color: "#059669" },
+  { max: 12000, color: "#d97706" },
+  { max: 13000, color: "#ea580c" },
+  { max: 14000, color: "#dc2626" },
+  { max: Infinity, color: "#7f1d1d" }
+];
+
+function getPriceColor(price) {
+  if (!price) return "#2d3748";
+  for (const b of PRICE_BREAKS) {
+    if (price <= b.max) return b.color;
+  }
+  return "#7f1d1d";
 }
 
-function saturate(color, amount = 0.35) {
-  let c = parseInt(color.slice(1), 16);
-  let r = (c >> 16);
-  let g = ((c >> 8) & 0xff);
-  let b = (c & 0xff);
-  r = Math.min(255, r + 255 * amount);
-  g = Math.min(255, g + 255 * amount);
-  b = Math.min(255, b + 255 * amount);
-  return `rgb(${r},${g},${b})`;
-}
-
+// ── Utils ─────────────────────────────────────────────────────────────────────
 async function fetchJSON(url) {
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`Erreur API ${res.status} sur ${url}`);
+  if (!res.ok) throw new Error(`Erreur ${res.status} sur ${url}`);
   return res.json();
 }
 
 function getArrLabel(code) {
-  const meta = arrMeta.find(m => m.code === code);
-  return meta ? meta.label : `Arrondissement ${code}`;
+  const m = arrMeta.find(a => a.code === code);
+  return m ? m.label : `${code}e Arrondissement`;
 }
 
-// === Popup avec tous les indicateurs
-function openArrondissementPopup(arrCode, layer) {
-  if (!layer) return;
-
-  const center = layer.getBounds().getCenter();
-
-  const prix = prixData.find(d => d.arrondissement === arrCode && d.annee === currentYear);
-  const loge = logData.find(d => d.arrondissement === arrCode && d.annee === currentYear);
-  const delin = delinquanceData.find(d => d.arrondissement === arrCode && d.annee === currentYear);
-  const dens = densiteData.find(d => d.arrondissement === arrCode && d.annee === currentYear);
-  const vac = vacanceData.find(d => d.arrondissement === arrCode && d.annee === currentYear);
-  const typo = typologieData.find(d => d.arrondissement === arrCode && d.annee === currentYear);
-
-  const prixTxt = prix ? `${Math.round(prix.prix_m2_median).toLocaleString("fr-FR")} €/m²` : "—";
-  const ventesTxt = prix ? prix.nb_ventes.toLocaleString("fr-FR") : "—";
-  const logTxt = loge ? loge.nb_programmes : "—";
-
-  const densTxt = dens && !isNaN(dens.densite_hab_km2)
-    ? `${Math.round(dens.densite_hab_km2).toLocaleString("fr-FR")} hab/km²`
-    : "—";
-
-  const delinTxt = delin && !isNaN(delin.score_delinquance)
-    ? `${delin.score_delinquance.toFixed(1)}/10`
-    : "—";
-
-  const vacTxt = vac && !isNaN(vac.taux_vacance)
-    ? `${vac.taux_vacance.toFixed(1)} %`
-    : "—";
-
-  const t1 = typo && !isNaN(typo.part_T1) ? `${typo.part_T1.toFixed(1)}%` : "—";
-  const t2 = typo && !isNaN(typo.part_T2) ? `${typo.part_T2.toFixed(1)}%` : "—";
-  const t3 = typo && !isNaN(typo.part_T3) ? `${typo.part_T3.toFixed(1)}%` : "—";
-  const t4 = typo && !isNaN(typo.part_T4) ? `${typo.part_T4.toFixed(1)}%` : "—";
-
-  const html = `
-    <div class="popup-container">
-      <div class="popup-title">${getArrLabel(arrCode)}</div>
-
-      <div class="popup-section">
-        <div>💶 <strong>Prix :</strong> ${prixTxt}</div>
-        <div>📊 <strong>Ventes :</strong> ${ventesTxt}</div>
-        <div>🏘️ <strong>Logements sociaux :</strong> ${logTxt}</div>
-      </div>
-
-      <div class="popup-section">
-        <div class="popup-subtitle">📌 Indicateurs</div>
-        <div>👥 Densité : ${densTxt}</div>
-        <div>🚓 Délinquance : ${delinTxt}</div>
-        <div>🏚️ Vacance : ${vacTxt}</div>
-      </div>
-
-      <div class="popup-section">
-        <div class="popup-subtitle">🏷️ Typologie</div>
-        <div>T1 : ${t1} &nbsp;|&nbsp; T2 : ${t2}</div>
-        <div>T3 : ${t3} &nbsp;|&nbsp; T4+ : ${t4}</div>
-      </div>
-
-      <div class="popup-footer">Année ${currentYear}</div>
-    </div>
-  `;
-
-  L.popup({
-    closeButton: false,
-    autoPan: true,
-    offset: [0, -6],
-    className: "custom-popup"
-  })
-    .setLatLng(center)
-    .setContent(html)
-    .openOn(map);
+function fmt(n, suffix = "") {
+  if (n == null || isNaN(n)) return "—";
+  return Number(n).toLocaleString("fr-FR") + suffix;
 }
 
+// ── Mode switching ────────────────────────────────────────────────────────────
+function setMode(mode) {
+  currentMode = mode;
+  document.getElementById("panel-explore").style.display  = mode === "explore"  ? "" : "none";
+  document.getElementById("panel-compare").style.display  = mode === "compare"  ? "" : "none";
+  document.getElementById("panel-timeline").style.display = mode === "timeline" ? "" : "none";
+  document.getElementById("btn-explore").classList.toggle("active", mode === "explore");
+  document.getElementById("btn-compare").classList.toggle("active", mode === "compare");
+  document.getElementById("btn-timeline").classList.toggle("active", mode === "timeline");
+  if (mode === "timeline") initTimelineChart();
+}
 
-// === Chargement GeoJSON
+// ── Choroplèthe ───────────────────────────────────────────────────────────────
+function setChoropleth(mode) {
+  choroplethMode = mode;
+  document.getElementById("choro-prix").classList.toggle("active", mode === "prix");
+  document.getElementById("choro-arr").classList.toggle("active", mode === "arr");
+  drawPolygons();
+  const legend = document.getElementById("legend");
+  legend.style.display = mode === "prix" ? "block" : "none";
+  if (mode === "prix") buildLegend();
+}
+
+function buildLegend() {
+  const items = document.getElementById("legend-items");
+  items.innerHTML = "";
+  PRICE_BREAKS.forEach((b, i) => {
+    const prev = i > 0 ? PRICE_BREAKS[i-1].max : 0;
+    const label = b.max === Infinity
+      ? `> ${fmt(prev)} €`
+      : `${fmt(prev)} – ${fmt(b.max)} €`;
+    items.innerHTML += `<div class="legend-item">
+      <span class="legend-color" style="background:${b.color}"></span>
+      <span>${label}</span>
+    </div>`;
+  });
+}
+
+// ── Map init ──────────────────────────────────────────────────────────────────
+function initMap() {
+  map = L.map("map", { minZoom: 12, maxZoom: 18 }).setView([48.8566, 2.3522], 12);
+  L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+    attribution: "© CartoDB",
+    minZoom: 12, maxZoom: 18
+  }).addTo(map);
+  map.setMaxBounds(L.latLngBounds([48.80, 2.20], [48.92, 2.48]));
+  markersLayer = L.layerGroup().addTo(map);
+}
+
 async function loadGeoJSON() {
   const res = await fetch("arrondissements.geojson");
   geojsonData = await res.json();
 }
 
-// === Mise en avant du polygone sélectionné
-function highlightPolygon(layer, arrCode) {
-  if (highlighted) {
-    polygonsLayer.resetStyle(highlighted);
-  }
-
-  const baseColor = ARR_COLORS[arrCode] || "#6b7280";
-
-  layer.setStyle({
-    fillColor: saturate(baseColor, 0.45),
-    fillOpacity: 0.95,
-    weight: 3,
-    color: "#000000"
-  });
-
-  highlighted = layer;
-}
-
-// === Dessin des polygones
+// ── Polygones & choroplèthe ───────────────────────────────────────────────────
 function drawPolygons() {
   if (!geojsonData) return;
-
   if (polygonsLayer) map.removeLayer(polygonsLayer);
 
   polygonsLayer = L.geoJSON(geojsonData, {
     renderer: L.svg(),
-
     style: (feature) => {
       const code = parseInt(feature.properties.c_ar || feature.properties.code);
-      return {
-        fillColor: ARR_COLORS[code] || "#9ca3af",
-        fillOpacity: 0.7,
-        color: "#ffffff",
-        weight: 1
-      };
+      let fillColor;
+      if (choroplethMode === "prix") {
+        const p = prixData.find(d => d.arrondissement === code && d.annee === currentYear);
+        fillColor = getPriceColor(p ? p.prix_m2_median : null);
+      } else {
+        fillColor = ARR_COLORS[code] || "#9ca3af";
+      }
+      return { fillColor, fillOpacity: 0.75, color: "#ffffff", weight: 1 };
     },
-
     onEachFeature: (feature, layer) => {
       const arrCode = parseInt(feature.properties.c_ar || feature.properties.code);
-
-      // HOVER
       layer.on("mouseover", () => {
         if (layer !== highlighted) {
-          layer.setStyle({
-            fillColor: darken(ARR_COLORS[arrCode] || "#9ca3af", 0.15),
-            fillOpacity: 0.85,
-            weight: 2
-          });
+          layer.setStyle({ fillOpacity: 0.95, weight: 2, color: "#00d4ff" });
         }
-        openArrondissementPopup(arrCode, layer);
+        openPopup(arrCode, layer);
       });
-
       layer.on("mouseout", () => {
-        if (layer !== highlighted) {
-          polygonsLayer.resetStyle(layer);
-        }
+        if (layer !== highlighted) polygonsLayer.resetStyle(layer);
+        map.closePopup();
       });
-
-      // CLICK
       layer.on("click", () => {
         currentArr = arrCode;
         arrSelect.value = String(arrCode);
         highlightPolygon(layer, arrCode);
-        updateAll(false); // on ne redessine pas les polygones ici
-        openArrondissementPopup(arrCode, layer);
+        updateKPIs();
+        updateChart();
+        openPopup(arrCode, layer);
       });
     }
-  });
-
-  polygonsLayer.addTo(map);
+  }).addTo(map);
 }
 
-// === Leaflet init
-function initMap() {
-  map = L.map("map", {
-    preferCanvas: false,
-    minZoom: 12,     // 🔒 empêche de trop dézoomer
-    maxZoom: 18,     // 🔒 limite le zoom maximum
-    zoomControl: true
-  }).setView([48.8566, 2.3522], 13); // zoom centré sur Paris
-
-  // Fond de carte
-  L.tileLayer('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=', {
-    minZoom: 12,
-    maxZoom: 18
-}).addTo(map);
-
-
-  // 🔒 Empêcher la carte de sortir de Paris
-  const parisBounds = L.latLngBounds(
-    [48.815, 2.22], // Sud-Ouest de Paris
-    [48.90, 2.42]   // Nord-Est de Paris
-  );
-  map.setMaxBounds(parisBounds);
-  map.setMinZoom(12);
-
-  markersLayer = L.layerGroup().addTo(map);
+function highlightPolygon(layer, arrCode) {
+  if (highlighted) polygonsLayer.resetStyle(highlighted);
+  layer.setStyle({ fillOpacity: 0.95, weight: 3, color: "#00d4ff" });
+  highlighted = layer;
 }
 
-// On n'utilise plus les markers
-function updateMarkers() {
-  return;
-}
+// ── Popup ─────────────────────────────────────────────────────────────────────
+function openPopup(arrCode, layer) {
+  const center = layer.getBounds().getCenter();
+  const prix  = prixData.find(d => d.arrondissement === arrCode && d.annee === currentYear);
+  const loge  = logData.find(d => d.arrondissement === arrCode && d.annee === currentYear);
+  const delin = delinquanceData.find(d => d.arrondissement === arrCode && d.annee === currentYear);
+  const dens  = densiteData.find(d => d.arrondissement === arrCode && d.annee === currentYear);
+  const vac   = vacanceData.find(d => d.arrondissement === arrCode && d.annee === currentYear);
+  const typo  = typologieData.find(d => d.arrondissement === arrCode && d.annee === currentYear);
 
-// === UI & KPIs
-function updateYearUI() {
-  if (!currentYear) {
-    yearDisplay.textContent = "-";
-    return;
+  // Variation prix vs année précédente
+  const prixPrev = prixData.find(d => d.arrondissement === arrCode && d.annee === currentYear - 1);
+  let varTxt = "";
+  if (prix && prixPrev) {
+    const v = ((prix.prix_m2_median - prixPrev.prix_m2_median) / prixPrev.prix_m2_median * 100).toFixed(1);
+    varTxt = `<span style="color:${v >= 0 ? '#39d98a' : '#ff5c5c'}">${v >= 0 ? "▲" : "▼"} ${Math.abs(v)}%</span> vs ${currentYear - 1}`;
   }
-  yearDisplay.textContent = currentYear;
-  yearSlider.value = currentYear;
 
-  const idx = years.indexOf(currentYear);
-  yearPrev.disabled = idx <= 0;
-  yearNext.disabled = idx >= years.length - 1;
+  const html = `
+    <div class="popup-container">
+      <div class="popup-title">${getArrLabel(arrCode)}</div>
+      <div class="popup-section">
+        <div>💶 <strong>${fmt(prix?.prix_m2_median, " €/m²")}</strong> ${varTxt}</div>
+        <div>📊 Ventes : ${fmt(prix?.nb_ventes)}</div>
+        <div>🏘️ Programmes sociaux : ${loge?.nb_programmes ?? "—"}</div>
+      </div>
+      <div class="popup-section">
+        <div class="popup-subtitle">📌 Indicateurs</div>
+        <div>👥 Densité : ${fmt(dens?.densite_hab_km2 ? Math.round(dens.densite_hab_km2) : null, " hab/km²")}</div>
+        <div>🚓 Délinquance : ${delin?.score_delinquance != null ? delin.score_delinquance.toFixed(1) + "/10" : "—"}</div>
+        <div>🏚️ Vacance : ${vac?.taux_vacance != null ? vac.taux_vacance.toFixed(1) + "%" : "—"}</div>
+      </div>
+      ${typo ? `
+      <div class="popup-section">
+        <div class="popup-subtitle">🏷️ Typologie</div>
+        <div>T1: ${typo.part_T1?.toFixed(1)}% &nbsp;|&nbsp; T2: ${typo.part_T2?.toFixed(1)}%</div>
+        <div>T3: ${typo.part_T3?.toFixed(1)}% &nbsp;|&nbsp; T4+: ${typo.part_T4?.toFixed(1)}%</div>
+      </div>` : ""}
+      <div class="popup-footer">Année ${currentYear}</div>
+    </div>`;
+
+  L.popup({ closeButton: false, autoPan: false, className: "custom-popup" })
+    .setLatLng(center).setContent(html).openOn(map);
 }
 
+// ── KPIs ──────────────────────────────────────────────────────────────────────
 function updateKPIs() {
-  if (!currentArr || !currentYear) {
-    kpiPrix.textContent = "-";
-    kpiVentes.textContent = "Nombre de ventes : -";
-    kpiLog.textContent = "-";
-    return;
-  }
-
-  const prix = prixData.find(d => d.arrondissement === currentArr && d.annee === currentYear);
-  const loge = logData.find(d => d.arrondissement === currentArr && d.annee === currentYear);
+  if (!currentArr || !currentYear) return;
+  const prix  = prixData.find(d => d.arrondissement === currentArr && d.annee === currentYear);
+  const loge  = logData.find(d => d.arrondissement === currentArr && d.annee === currentYear);
   const delin = delinquanceData.find(d => d.arrondissement === currentArr && d.annee === currentYear);
-  const dens = densiteData.find(d => d.arrondissement === currentArr && d.annee === currentYear);
-  const vac = vacanceData.find(d => d.arrondissement === currentArr && d.annee === currentYear);
+  const dens  = densiteData.find(d => d.arrondissement === currentArr && d.annee === currentYear);
+  const vac   = vacanceData.find(d => d.arrondissement === currentArr && d.annee === currentYear);
 
-  if (prix) {
-    kpiPrix.textContent =
-      Math.round(prix.prix_m2_median).toLocaleString("fr-FR") + " €/m²";
-    kpiVentes.textContent =
-      "Nombre de ventes : " + prix.nb_ventes.toLocaleString("fr-FR");
-  } else {
-    kpiPrix.textContent = "-";
-    kpiVentes.textContent = "Nombre de ventes : -";
-  }
-
-  const logTxt = loge ? `${loge.nb_programmes.toLocaleString("fr-FR")} programmes sociaux` : "Logements sociaux : n.d.";
-
-  const densTxt = dens && !isNaN(dens.densite_hab_km2)
-    ? `${Math.round(dens.densite_hab_km2).toLocaleString("fr-FR")} hab/km²`
-    : "densité n.d.";
-
-  const delinTxt = delin && !isNaN(delin.score_delinquance)
-    ? `${delin.score_delinquance.toFixed(1)}/10`
-    : "délinquance n.d.";
-
-  const vacTxt = vac && !isNaN(vac.taux_vacance)
-    ? `${vac.taux_vacance.toFixed(1)}%`
-    : "vacance n.d.";
+  kpiPrix.textContent   = fmt(prix ? Math.round(prix.prix_m2_median) : null, " €/m²");
+  kpiVentes.textContent = "Ventes : " + fmt(prix?.nb_ventes);
 
   kpiLog.innerHTML = `
-  <div class="kpi-row">🏘️ <span class="kpi-label">Programmes :</span> <span>${loge ? loge.nb_programmes : "—"}</span></div>
-  <div class="kpi-row">👥 <span class="kpi-label">Densité :</span> <span>${dens && !isNaN(dens.densite_hab_km2) ? densTxt : "—"}</span></div>
-  <div class="kpi-row">🏚️ <span class="kpi-label">Vacance :</span> <span>${vac && !isNaN(vac.taux_vacance) ? vacTxt : "—"}</span></div>
-  <div class="kpi-row">🚓 <span class="kpi-label">Délinquance :</span> <span>${delin && !isNaN(delin.score_delinquance) ? delinTxt : "—"}</span></div>
-`;
-
-
+    <div class="kpi-row">🏘️ <span class="kpi-label">Programmes</span><span>${loge?.nb_programmes ?? "—"}</span></div>
+    <div class="kpi-row">👥 <span class="kpi-label">Densité</span><span>${dens?.densite_hab_km2 ? Math.round(dens.densite_hab_km2).toLocaleString("fr-FR") + " hab/km²" : "—"}</span></div>
+    <div class="kpi-row">🏚️ <span class="kpi-label">Vacance</span><span>${vac?.taux_vacance != null ? vac.taux_vacance.toFixed(1) + "%" : "—"}</span></div>
+    <div class="kpi-row">🚓 <span class="kpi-label">Délinquance</span><span>${delin?.score_delinquance != null ? delin.score_delinquance.toFixed(1) + "/10" : "—"}</span></div>`;
 }
 
-// full = true si on veut redessiner la carte (changement de données de base)
-function updateAll(full = false) {
-  updateYearUI();
-  updateKPIs();
-  if (full) {
-    drawPolygons();
+// ── Graphique évolution ───────────────────────────────────────────────────────
+function updateChart() {
+  if (!currentArr) return;
+  const data = prixData
+    .filter(d => d.arrondissement === currentArr)
+    .sort((a, b) => a.annee - b.annee);
+
+  const labels = data.map(d => d.annee);
+  const values = data.map(d => Math.round(d.prix_m2_median));
+
+  const ctx = document.getElementById("chart-evolution").getContext("2d");
+  if (chartEvolution) chartEvolution.destroy();
+  chartEvolution = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [{
+        data: values,
+        borderColor: "#00d4ff",
+        backgroundColor: "rgba(0,212,255,0.08)",
+        borderWidth: 2,
+        pointRadius: 3,
+        pointBackgroundColor: "#00d4ff",
+        tension: 0.3,
+        fill: true
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: "#6b7a99", font: { size: 9 } }, grid: { color: "rgba(255,255,255,0.04)" } },
+        y: { ticks: { color: "#6b7a99", font: { size: 9 }, callback: v => v.toLocaleString("fr-FR") + " €" }, grid: { color: "rgba(255,255,255,0.04)" } }
+      }
+    }
+  });
+}
+
+// ── Mode Comparaison ──────────────────────────────────────────────────────────
+async function runComparison() {
+  const arr1 = parseInt(document.getElementById("arr-compare-1").value);
+  const arr2 = parseInt(document.getElementById("arr-compare-2").value);
+  const year = parseInt(document.getElementById("year-compare").value);
+  const result = document.getElementById("compare-result");
+
+  result.innerHTML = `<div class="loading">Chargement...</div>`;
+
+  try {
+    const data = await fetchJSON(`${API_BASE}/comparaison?arr1=${arr1}&arr2=${arr2}&annee=${year}`);
+    const a = data.arrondissement_1;
+    const b = data.arrondissement_2;
+
+    const row = (label, va, vb, suffix = "") => {
+      const na = parseFloat(va), nb = parseFloat(vb);
+      const better = !isNaN(na) && !isNaN(nb) ? (na < nb ? "a" : na > nb ? "b" : "") : "";
+      return `<tr>
+        <td class="${better === 'a' ? 'win' : ''}">${!isNaN(na) ? na.toLocaleString("fr-FR") + suffix : "—"}</td>
+        <td class="compare-label">${label}</td>
+        <td class="${better === 'b' ? 'win' : ''}">${!isNaN(nb) ? nb.toLocaleString("fr-FR") + suffix : "—"}</td>
+      </tr>`;
+    };
+
+    result.innerHTML = `
+      <div class="compare-result-box">
+        <div class="compare-header">
+          <span class="compare-arr-label arr-a">${getArrLabel(arr1)}</span>
+          <span class="compare-vs">VS</span>
+          <span class="compare-arr-label arr-b">${getArrLabel(arr2)}</span>
+        </div>
+        <table class="compare-table">
+          ${row("Prix/m²", a.prix?.prix_m2_median ? Math.round(a.prix.prix_m2_median) : null, b.prix?.prix_m2_median ? Math.round(b.prix.prix_m2_median) : null, " €")}
+          ${row("Ventes", a.prix?.nb_ventes, b.prix?.nb_ventes)}
+          ${row("Programmes soc.", a.logements_sociaux?.nb_programmes, b.logements_sociaux?.nb_programmes)}
+          ${row("Densité hab/km²", a.densite?.densite_hab_km2 ? Math.round(a.densite.densite_hab_km2) : null, b.densite?.densite_hab_km2 ? Math.round(b.densite.densite_hab_km2) : null)}
+          ${row("Délinquance /10", a.delinquance?.score_delinquance, b.delinquance?.score_delinquance)}
+          ${row("Vacance %", a.vacance?.taux_vacance, b.vacance?.taux_vacance, "%")}
+        </table>
+        <canvas id="chart-compare" height="130"></canvas>
+      </div>`;
+
+    // Graphique comparaison
+    setTimeout(() => {
+      const tlA = (a.timeline || []).sort((x,y) => x.annee - y.annee);
+      const tlB = (b.timeline || []).sort((x,y) => x.annee - y.annee);
+      const labelsC = tlA.map(d => d.annee);
+      const ctx2 = document.getElementById("chart-compare")?.getContext("2d");
+      if (ctx2) {
+        new Chart(ctx2, {
+          type: "line",
+          data: {
+            labels: labelsC,
+            datasets: [
+              { label: getArrLabel(arr1), data: tlA.map(d => Math.round(d.prix_m2_median)), borderColor: "#00d4ff", backgroundColor: "rgba(0,212,255,0.05)", borderWidth: 2, tension: 0.3, pointRadius: 2 },
+              { label: getArrLabel(arr2), data: tlB.map(d => Math.round(d.prix_m2_median)), borderColor: "#f5a623", backgroundColor: "rgba(245,166,35,0.05)", borderWidth: 2, tension: 0.3, pointRadius: 2 }
+            ]
+          },
+          options: {
+            responsive: true,
+            plugins: { legend: { labels: { color: "#9ca3af", font: { size: 9 } } } },
+            scales: {
+              x: { ticks: { color: "#6b7a99", font: { size: 8 } }, grid: { color: "rgba(255,255,255,0.04)" } },
+              y: { ticks: { color: "#6b7a99", font: { size: 8 }, callback: v => v.toLocaleString("fr-FR") + "€" }, grid: { color: "rgba(255,255,255,0.04)" } }
+            }
+          }
+        });
+      }
+    }, 100);
+
+  } catch(e) {
+    result.innerHTML = `<div class="error">Erreur : ${e.message}</div>`;
   }
 }
 
-// === Contrôles
+// ── Mode Timeline animée ──────────────────────────────────────────────────────
+function initTimelineChart() {
+  const ctx = document.getElementById("chart-timeline")?.getContext("2d");
+  if (!ctx) return;
+  if (chartTimeline) chartTimeline.destroy();
+  chartTimeline = new Chart(ctx, {
+    type: "bar",
+    data: { labels: [], datasets: [{ data: [], backgroundColor: "#00d4ff", borderRadius: 3 }] },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: "#6b7a99", font: { size: 8 } }, grid: { display: false } },
+        y: { ticks: { color: "#6b7a99", font: { size: 8 }, callback: v => v.toLocaleString("fr-FR") + "€" }, grid: { color: "rgba(255,255,255,0.04)" } }
+      }
+    }
+  });
+}
+
+function playTimeline() {
+  stopTimeline();
+  const arr = parseInt(document.getElementById("arr-timeline").value);
+  const data = prixData.filter(d => d.arrondissement === arr).sort((a,b) => a.annee - b.annee);
+  if (!data.length) return;
+
+  document.getElementById("btn-play").textContent = "⏸ En cours...";
+  document.getElementById("btn-play").disabled = true;
+
+  // Init chart avec toutes les années
+  if (chartTimeline) {
+    chartTimeline.data.labels = data.map(d => d.annee);
+    chartTimeline.data.datasets[0].data = data.map(() => 0);
+    chartTimeline.update();
+  }
+
+  let i = 0;
+  timelineInterval = setInterval(() => {
+    if (i >= data.length) { stopTimeline(); return; }
+    const d = data[i];
+    document.getElementById("timeline-year").textContent = d.annee;
+    document.getElementById("timeline-prix").textContent = `Prix : ${Math.round(d.prix_m2_median).toLocaleString("fr-FR")} €/m²`;
+
+    // Mettre à jour la carte
+    currentYear = d.annee;
+    yearDisplay.textContent = d.annee;
+    drawPolygons();
+
+    // Mettre à jour le graphique barre par barre
+    if (chartTimeline) {
+      chartTimeline.data.datasets[0].data[i] = Math.round(d.prix_m2_median);
+      chartTimeline.data.datasets[0].backgroundColor = data.map((_, idx) => idx === i ? "#f5a623" : "#00d4ff");
+      chartTimeline.update();
+    }
+
+    i++;
+  }, 800);
+}
+
+function stopTimeline() {
+  if (timelineInterval) { clearInterval(timelineInterval); timelineInterval = null; }
+  const btn = document.getElementById("btn-play");
+  if (btn) { btn.textContent = "▶ Play"; btn.disabled = false; }
+}
+
+// ── Contrôles ─────────────────────────────────────────────────────────────────
 function initControls() {
   arrSelect.addEventListener("change", () => {
     currentArr = parseInt(arrSelect.value, 10);
-    updateAll(false);
+    updateKPIs();
+    updateChart();
   });
 
   yearSlider.addEventListener("input", () => {
     currentYear = parseInt(yearSlider.value, 10);
-    updateAll(false);
-    // popup se mettra à jour au prochain hover/clic
+    yearDisplay.textContent = currentYear;
+    drawPolygons();
+    updateKPIs();
   });
 
   yearPrev.addEventListener("click", () => {
     const idx = years.indexOf(currentYear);
-    if (idx > 0) {
-      currentYear = years[idx - 1];
-      updateAll(false);
-    }
+    if (idx > 0) { currentYear = years[idx - 1]; yearDisplay.textContent = currentYear; yearSlider.value = currentYear; drawPolygons(); updateKPIs(); }
   });
 
   yearNext.addEventListener("click", () => {
     const idx = years.indexOf(currentYear);
-    if (idx < years.length - 1) {
-      currentYear = years[idx + 1];
-      updateAll(false);
-    }
+    if (idx < years.length - 1) { currentYear = years[idx + 1]; yearDisplay.textContent = currentYear; yearSlider.value = currentYear; drawPolygons(); updateKPIs(); }
   });
 }
 
-// === Boot ===
+function updateYearUI() {
+  yearDisplay.textContent = currentYear;
+  yearSlider.value = currentYear;
+  yearPrev.disabled = years.indexOf(currentYear) <= 0;
+  yearNext.disabled = years.indexOf(currentYear) >= years.length - 1;
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
 async function main() {
   initMap();
   await loadGeoJSON();
 
-  const [
-    arrRaw,
-    prixRaw,
-    logRaw,
-    delinRaw,
-    densRaw,
-    vacRaw,
-    typoRaw
-  ] = await Promise.all([
+  const [arrRaw, prixRaw, logRaw, delinRaw, densRaw, vacRaw, typoRaw] = await Promise.all([
     fetchJSON(`${API_BASE}/arrondissements`),
     fetchJSON(`${API_BASE}/prix_m2`),
     fetchJSON(`${API_BASE}/logements_sociaux`),
@@ -398,101 +458,64 @@ async function main() {
   ]);
 
   // Arrondissements
-  arrMeta = arrRaw
-    .map((d) => {
-      const code = parseInt(d.code_arrondissement, 10);
-      if (!Number.isInteger(code) || code < 1 || code > 20) return null;
-      const labelBase = d.nom_officiel || d.nom || `Arrondissement ${code}`;
-      const suffix = code === 1 ? "er" : "ème";
-      return { code, label: `${code}${suffix} - ${labelBase}` };
-    })
-    .filter(Boolean)
-    .sort((a, b) => a.code - b.code);
+  arrMeta = arrRaw.map(d => {
+    const code = parseInt(d.code_arrondissement, 10);
+    if (!Number.isInteger(code) || code < 1 || code > 20) return null;
+    const suffix = code === 1 ? "er" : "ème";
+    return { code, label: `${code}${suffix} — ${d.nom_officiel || d.nom || ""}` };
+  }).filter(Boolean).sort((a,b) => a.code - b.code);
 
-  // Prix m²
-  prixData = prixRaw
-    .map((d) => ({
-      arrondissement: parseInt(d.arrondissement, 10),
-      annee: parseInt(d.annee, 10),
-      prix_m2_median: Number(d.prix_m2_median),
-      nb_ventes: Number(d.nb_ventes),
-    }))
-    .filter((d) => !isNaN(d.arrondissement) && !isNaN(d.annee));
+  prixData       = prixRaw.map(d => ({ arrondissement: parseInt(d.arrondissement), annee: parseInt(d.annee), prix_m2_median: Number(d.prix_m2_median), nb_ventes: Number(d.nb_ventes) })).filter(d => !isNaN(d.arrondissement));
+  logData        = logRaw.map(d => ({ arrondissement: parseInt(d.arrondissement), annee: parseInt(d.annee), nb_programmes: Number(d.nb_programmes) })).filter(d => !isNaN(d.arrondissement));
+  delinquanceData= delinRaw.map(d => ({ arrondissement: parseInt(d.arrondissement), annee: parseInt(d.annee), score_delinquance: Number(d.score_delinquance) })).filter(d => !isNaN(d.arrondissement));
+  densiteData    = densRaw.map(d => ({ arrondissement: parseInt(d.arrondissement), annee: parseInt(d.annee), densite_hab_km2: Number(d.densite_hab_km2) })).filter(d => !isNaN(d.arrondissement));
+  vacanceData    = vacRaw.map(d => ({ arrondissement: parseInt(d.arrondissement), annee: parseInt(d.annee), taux_vacance: Number(d.taux_vacance) })).filter(d => !isNaN(d.arrondissement));
+  typologieData  = typoRaw.map(d => ({ arrondissement: parseInt(d.arrondissement), annee: parseInt(d.annee), part_T1: Number(d.part_T1), part_T2: Number(d.part_T2), part_T3: Number(d.part_T3), part_T4: Number(d.part_T4) })).filter(d => !isNaN(d.arrondissement));
 
-  // Logements sociaux
-  logData = logRaw
-    .map((d) => ({
-      arrondissement: parseInt(d.arrondissement, 10),
-      annee: parseInt(d.annee, 10),
-      nb_programmes: Number(d.nb_programmes),
-    }))
-    .filter((d) => !isNaN(d.arrondissement) && !isNaN(d.annee));
-
-  // Délinquance
-  delinquanceData = delinRaw
-    .map((d) => ({
-      arrondissement: parseInt(d.arrondissement, 10),
-      annee: parseInt(d.annee, 10),
-      score_delinquance: Number(d.score_delinquance),
-    }))
-    .filter((d) => !isNaN(d.arrondissement) && !isNaN(d.annee));
-
-  // Densité
-  densiteData = densRaw
-    .map((d) => ({
-      arrondissement: parseInt(d.arrondissement, 10),
-      annee: parseInt(d.annee, 10),
-      densite_hab_km2: Number(d.densite_hab_km2),
-    }))
-    .filter((d) => !isNaN(d.arrondissement) && !isNaN(d.annee));
-
-  // Vacance
-  vacanceData = vacRaw
-    .map((d) => ({
-      arrondissement: parseInt(d.arrondissement, 10),
-      annee: parseInt(d.annee, 10),
-      taux_vacance: Number(d.taux_vacance),
-    }))
-    .filter((d) => !isNaN(d.arrondissement) && !isNaN(d.annee));
-
-  // Typologie
-  typologieData = typoRaw
-    .map((d) => ({
-      arrondissement: parseInt(d.arrondissement, 10),
-      annee: parseInt(d.annee, 10),
-      part_T1: Number(d.part_T1),
-      part_T2: Number(d.part_T2),
-      part_T3: Number(d.part_T3),
-      part_T4: Number(d.part_T4),
-    }))
-    .filter((d) => !isNaN(d.arrondissement) && !isNaN(d.annee));
-
-  // Années
-  const yearSet = new Set(prixData.map(d => d.annee));
-  years = Array.from(yearSet).sort((a, b) => a - b);
+  years = [...new Set(prixData.map(d => d.annee))].sort((a,b) => a-b);
   currentYear = years[years.length - 1];
+  yearSlider.min = years[0]; yearSlider.max = years[years.length - 1];
 
-  yearSlider.min = years[0];
-  yearSlider.max = years[years.length - 1];
-
-  // Remplir le select
-  arrMeta.forEach((a) => {
-    const opt = document.createElement("option");
-    opt.value = a.code;
-    opt.textContent = a.label;
-    arrSelect.appendChild(opt);
+  // Remplir tous les selects
+  const selects = ["arr-select", "arr-compare-1", "arr-compare-2", "arr-timeline"];
+  selects.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    arrMeta.forEach(a => {
+      const opt = document.createElement("option");
+      opt.value = a.code; opt.textContent = a.label;
+      el.appendChild(opt);
+    });
   });
+
+  // Select années comparaison
+  const yearCompare = document.getElementById("year-compare");
+  years.slice().reverse().forEach(y => {
+    const opt = document.createElement("option");
+    opt.value = y; opt.textContent = y;
+    if (y === currentYear) opt.selected = true;
+    yearCompare.appendChild(opt);
+  });
+
+  // Arrondissement comparaison B par défaut = 6
+  const c2 = document.getElementById("arr-compare-2");
+  if (c2) c2.value = "6";
 
   currentArr = arrMeta[0].code;
   arrSelect.value = String(currentArr);
 
+  updateYearUI();
   drawPolygons();
+  buildLegend();
   initControls();
-  updateAll(true);
+  updateKPIs();
+  updateChart();
+
+  // Choroplèthe par prix par défaut
+  setChoropleth("prix");
 }
 
-// Lancer
-main().catch((err) => {
+main().catch(err => {
   console.error(err);
-  alert("Erreur : " + err.message);
+  alert("Erreur chargement : " + err.message);
 });
