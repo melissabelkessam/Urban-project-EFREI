@@ -1,6 +1,6 @@
 # Rapport de test de charge — PostgreSQL (Supabase)
 
-Date du test : 2026-06-22 10:11:10
+Date du test : 2026-06-22 15:01:13
 Base de données : PostgreSQL (Supabase, pooler aws-0-eu-west-1)
 
 ## Paramètres
@@ -11,14 +11,14 @@ Base de données : PostgreSQL (Supabase, pooler aws-0-eu-west-1)
 ## Résultats
 | Métrique | Valeur |
 |---|---|
-| Requêtes réussies | 0/200 |
+| Requêtes réussies | 200/200 |
 | Erreurs | 0 |
-| Temps total | 0.551 s |
-| Débit | 0 req/s |
-| Latence moyenne | 0.00 ms |
-| Latence p95 | 0.00 ms |
+| Temps total | 1.120 s |
+| Débit | 179 req/s |
+| Latence moyenne | 31.11 ms |
+| Latence p95 | 59.46 ms |
 
 ## Conclusion
 La base supporte 10 connexions concurrentes sans erreur, avec une
-latence p95 restant sous la barre des 0 ms, ce qui confirme
+latence p95 restant sous la barre des 59 ms, ce qui confirme
 l'intégrité et la performance de la base sous charge (critère C1.1).
