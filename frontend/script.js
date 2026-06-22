@@ -1,4 +1,4 @@
-const API_BASE = "https://urban-project-efrei.onrender.com";
+﻿const API_BASE = "https://urban-project-efrei.onrender.com";
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 const arrSelect   = document.getElementById("arr-select");
@@ -21,7 +21,7 @@ let timelineInterval = null;
 let chartEvolution = null;
 let chartTimeline = null;
 
-// ── Palette pastel par arrondissement (inspirée carte postale Paris) ──────────
+// ── Palette pastel par arrondissement ─────────────────────────────────────────
 const PASTEL_HUES = ["#AFD8E6", "#F3C6CE", "#F6E3A6", "#BFE0C8", "#D2C8EA", "#F3CDA8"];
 const ARR_COLORS = {};
 for (let i = 1; i <= 20; i++) {
@@ -155,7 +155,7 @@ function drawPolygons() {
           keyboard: false
         });
         labelsLayer.addLayer(badge);
-      } catch (e) { }
+      } catch (e) { /* géométrie invalide, ignorer */ }
 
       layer.on("mouseover", () => {
         if (layer !== highlighted) {
@@ -242,6 +242,7 @@ function updateKPIs() {
   const dens  = densiteData.find(d => d.arrondissement === currentArr && d.annee === currentYear);
   const ev    = espacesVertsData.find(d => d.arrondissement === currentArr);
   const air   = qualiteAirData.find(d => d.arrondissement === currentArr);
+  const typo  = typologieData.find(d => d.arrondissement === currentArr && d.annee === currentYear);
 
   kpiPrix.textContent   = fmt(prix ? Math.round(prix.prix_m2_median) : null, " €/m²");
   kpiVentes.textContent = "Ventes : " + fmt(prix?.nb_ventes);
@@ -252,6 +253,16 @@ function updateKPIs() {
     <div class="kpi-row">🚓 <span class="kpi-label">Délinquance</span><span>${delin?.score_delinquance != null ? delin.score_delinquance.toFixed(1) + "/10" : "—"}</span></div>
     <div class="kpi-row">🌳 <span class="kpi-label">Espaces verts</span><span>${ev?.m2_par_habitant != null ? ev.m2_par_habitant.toFixed(1) + " m²/hab" : "—"}</span></div>
     <div class="kpi-row">🌫️ <span class="kpi-label">NO2 (2018)</span><span>${air?.no2_moyen != null ? air.no2_moyen.toFixed(1) + " µg/m³" : "—"}</span></div>`;
+
+  const kpiTypo = document.getElementById("kpi-typo");
+  if (kpiTypo) {
+    kpiTypo.innerHTML = typo ? `
+      <div class="kpi-row"><span class="kpi-label">T1</span><span>${typo.part_T1?.toFixed(1)}%</span></div>
+      <div class="kpi-row"><span class="kpi-label">T2</span><span>${typo.part_T2?.toFixed(1)}%</span></div>
+      <div class="kpi-row"><span class="kpi-label">T3</span><span>${typo.part_T3?.toFixed(1)}%</span></div>
+      <div class="kpi-row"><span class="kpi-label">T4+</span><span>${typo.part_T4?.toFixed(1)}%</span></div>
+    ` : "—";
+  }
 }
 
 // ── Graphique évolution ───────────────────────────────────────────────────────
