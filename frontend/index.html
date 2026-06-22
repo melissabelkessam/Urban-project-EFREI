@@ -4,6 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Urban Data Explorer — Paris</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <link rel="stylesheet" href="style.css" />
@@ -31,7 +34,17 @@
   <!-- MAIN -->
   <main class="layout">
 
-    <!-- PANNEAU GAUCHE -->
+    <!-- CARTE (plein écran, en arrière-plan) -->
+    <section class="map-panel">
+      <div id="map"></div>
+      <!-- Légende choroplèthe -->
+      <div id="legend" class="map-legend" style="display:none">
+        <div class="legend-title">Prix/m²</div>
+        <div class="legend-items" id="legend-items"></div>
+      </div>
+    </section>
+
+    <!-- PANNEAU FLOTTANT -->
     <section class="left-panel">
 
       <!-- MODE EXPLORER -->
@@ -70,10 +83,11 @@
           <div class="kpi-card">
             <span class="kpi-label">Indicateurs territoriaux</span>
             <div id="kpi-log">
-              <div class="kpi-row">🏘️ <span class="kpi-label">Programmes</span><span>—</span></div>
+              <div class="kpi-row">🏘️ <span class="kpi-label">Programmes sociaux</span><span>—</span></div>
               <div class="kpi-row">👥 <span class="kpi-label">Densité</span><span>—</span></div>
-              <div class="kpi-row">🏚️ <span class="kpi-label">Vacance</span><span>—</span></div>
               <div class="kpi-row">🚓 <span class="kpi-label">Délinquance</span><span>—</span></div>
+              <div class="kpi-row">🌳 <span class="kpi-label">Espaces verts</span><span>—</span></div>
+              <div class="kpi-row">🌫️ <span class="kpi-label">NO2 (2018)</span><span>—</span></div>
             </div>
           </div>
           <!-- Graphique évolution -->
@@ -125,16 +139,6 @@
         </div>
       </div>
 
-    </section>
-
-    <!-- CARTE -->
-    <section class="map-panel">
-      <div id="map"></div>
-      <!-- Légende choroplèthe -->
-      <div id="legend" class="map-legend" style="display:none">
-        <div class="legend-title">Prix/m²</div>
-        <div class="legend-items" id="legend-items"></div>
-      </div>
     </section>
 
   </main>

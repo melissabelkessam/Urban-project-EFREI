@@ -1,4 +1,4 @@
-const API_BASE = "http://127.0.0.1:8000";
+const API_BASE = "https://urban-project-efrei.onrender.com";
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 const arrSelect   = document.getElementById("arr-select");
@@ -11,23 +11,22 @@ const kpiVentes   = document.getElementById("kpi-ventes");
 const kpiLog      = document.getElementById("kpi-log");
 
 // ── État global ───────────────────────────────────────────────────────────────
-let map, markersLayer, polygonsLayer, highlighted, geojsonData;
+let map, markersLayer, polygonsLayer, labelsLayer, highlighted, geojsonData;
 let arrMeta = [], prixData = [], logData = [], delinquanceData = [];
-let densiteData = [], vacanceData = [], typologieData = [];
+let densiteData = [], espacesVertsData = [], qualiteAirData = [], typologieData = [];
 let years = [], currentArr = null, currentYear = null;
-let choroplethMode = "prix"; // "prix" ou "arr"
+let choroplethMode = "prix";
 let currentMode = "explore";
 let timelineInterval = null;
 let chartEvolution = null;
 let chartTimeline = null;
 
-// ── Palette couleurs par arrondissement ───────────────────────────────────────
-const ARR_COLORS = {
-  1:"#3b82f6",2:"#6366f1",3:"#10b981",4:"#14b8a6",5:"#f59e0b",
-  6:"#ef4444",7:"#8b5cf6",8:"#0ea5e9",9:"#22c55e",10:"#e11d48",
-  11:"#f97316",12:"#0d9488",13:"#16a34a",14:"#7c3aed",15:"#ea580c",
-  16:"#4f46e5",17:"#06b6d4",18:"#84cc16",19:"#d946ef",20:"#475569"
-};
+// ── Palette pastel par arrondissement (inspirée carte postale Paris) ──────────
+const PASTEL_HUES = ["#AFD8E6", "#F3C6CE", "#F6E3A6", "#BFE0C8", "#D2C8EA", "#F3CDA8"];
+const ARR_COLORS = {};
+for (let i = 1; i <= 20; i++) {
+  ARR_COLORS[i] = PASTEL_HUES[(i - 1) % PASTEL_HUES.length];
+}
 
 // ── Palette choroplèthe prix ──────────────────────────────────────────────────
 const PRICE_BREAKS = [
@@ -42,7 +41,7 @@ const PRICE_BREAKS = [
 ];
 
 function getPriceColor(price) {
-  if (!price) return "#2d3748";
+  if (!price) return "#9aa3ad";
   for (const b of PRICE_BREAKS) {
     if (price <= b.max) return b.color;
   }
@@ -106,12 +105,12 @@ function buildLegend() {
 
 // ── Map init ──────────────────────────────────────────────────────────────────
 function initMap() {
-  map = L.map("map", { minZoom: 12, maxZoom: 18 }).setView([48.8566, 2.3522], 12);
-  L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+  map = L.map("map", { minZoom: 10, maxZoom: 18, zoomControl: true }).setView([48.8566, 2.3522], 12);
+  L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
     attribution: "© CartoDB",
-    minZoom: 12, maxZoom: 18
+    minZoom: 10, maxZoom: 18
   }).addTo(map);
-  map.setMaxBounds(L.latLngBounds([48.80, 2.20], [48.92, 2.48]));
+  map.setMaxBounds(L.latLngBounds([48.70, 2.05], [49.00, 2.65]));
   markersLayer = L.layerGroup().addTo(map);
 }
 
@@ -124,6 +123,8 @@ async function loadGeoJSON() {
 function drawPolygons() {
   if (!geojsonData) return;
   if (polygonsLayer) map.removeLayer(polygonsLayer);
+  if (labelsLayer) map.removeLayer(labelsLayer);
+  labelsLayer = L.layerGroup().addTo(map);
 
   polygonsLayer = L.geoJSON(geojsonData, {
     renderer: L.svg(),
@@ -134,15 +135,31 @@ function drawPolygons() {
         const p = prixData.find(d => d.arrondissement === code && d.annee === currentYear);
         fillColor = getPriceColor(p ? p.prix_m2_median : null);
       } else {
-        fillColor = ARR_COLORS[code] || "#9ca3af";
+        fillColor = ARR_COLORS[code] || "#cdd3d9";
       }
-      return { fillColor, fillOpacity: 0.75, color: "#ffffff", weight: 1 };
+      return { fillColor, fillOpacity: 0.85, color: "#ffffff", weight: 1.5 };
     },
     onEachFeature: (feature, layer) => {
       const arrCode = parseInt(feature.properties.c_ar || feature.properties.code);
+
+      try {
+        const center = layer.getBounds().getCenter();
+        const badge = L.marker(center, {
+          icon: L.divIcon({
+            className: "arr-badge",
+            html: `<span>${arrCode}</span>`,
+            iconSize: [34, 34],
+            iconAnchor: [17, 17]
+          }),
+          interactive: false,
+          keyboard: false
+        });
+        labelsLayer.addLayer(badge);
+      } catch (e) { }
+
       layer.on("mouseover", () => {
         if (layer !== highlighted) {
-          layer.setStyle({ fillOpacity: 0.95, weight: 2, color: "#00d4ff" });
+          layer.setStyle({ fillOpacity: 1, weight: 2.5, color: "#2F6F8F" });
         }
         openPopup(arrCode, layer);
       });
@@ -164,7 +181,7 @@ function drawPolygons() {
 
 function highlightPolygon(layer, arrCode) {
   if (highlighted) polygonsLayer.resetStyle(highlighted);
-  layer.setStyle({ fillOpacity: 0.95, weight: 3, color: "#00d4ff" });
+  layer.setStyle({ fillOpacity: 1, weight: 3, color: "#2F6F8F" });
   highlighted = layer;
 }
 
@@ -172,18 +189,19 @@ function highlightPolygon(layer, arrCode) {
 function openPopup(arrCode, layer) {
   const center = layer.getBounds().getCenter();
   const prix  = prixData.find(d => d.arrondissement === arrCode && d.annee === currentYear);
-  const loge  = logData.find(d => d.arrondissement === arrCode && d.annee === currentYear);
+  const loge  = logData.find(d => d.arrondissement === arrCode && d.annee === currentYear) ||
+                logData.filter(d => d.arrondissement === arrCode).sort((a,b) => b.annee - a.annee)[0];
   const delin = delinquanceData.find(d => d.arrondissement === arrCode && d.annee === currentYear);
   const dens  = densiteData.find(d => d.arrondissement === arrCode && d.annee === currentYear);
-  const vac   = vacanceData.find(d => d.arrondissement === arrCode && d.annee === currentYear);
+  const ev    = espacesVertsData.find(d => d.arrondissement === arrCode);
+  const air   = qualiteAirData.find(d => d.arrondissement === arrCode);
   const typo  = typologieData.find(d => d.arrondissement === arrCode && d.annee === currentYear);
 
-  // Variation prix vs année précédente
   const prixPrev = prixData.find(d => d.arrondissement === arrCode && d.annee === currentYear - 1);
   let varTxt = "";
   if (prix && prixPrev) {
     const v = ((prix.prix_m2_median - prixPrev.prix_m2_median) / prixPrev.prix_m2_median * 100).toFixed(1);
-    varTxt = `<span style="color:${v >= 0 ? '#39d98a' : '#ff5c5c'}">${v >= 0 ? "▲" : "▼"} ${Math.abs(v)}%</span> vs ${currentYear - 1}`;
+    varTxt = `<span style="color:${v >= 0 ? '#1f9d63' : '#c0473f'}">${v >= 0 ? "▲" : "▼"} ${Math.abs(v)}%</span> vs ${currentYear - 1}`;
   }
 
   const html = `
@@ -198,7 +216,8 @@ function openPopup(arrCode, layer) {
         <div class="popup-subtitle">📌 Indicateurs</div>
         <div>👥 Densité : ${fmt(dens?.densite_hab_km2 ? Math.round(dens.densite_hab_km2) : null, " hab/km²")}</div>
         <div>🚓 Délinquance : ${delin?.score_delinquance != null ? delin.score_delinquance.toFixed(1) + "/10" : "—"}</div>
-        <div>🏚️ Vacance : ${vac?.taux_vacance != null ? vac.taux_vacance.toFixed(1) + "%" : "—"}</div>
+        <div>🌳 Espaces verts : ${ev?.m2_par_habitant != null ? ev.m2_par_habitant.toFixed(1) + " m²/hab" : "—"}</div>
+        <div>🌫️ NO2 : ${air?.no2_moyen != null ? air.no2_moyen.toFixed(1) + " µg/m³" : "—"}</div>
       </div>
       ${typo ? `
       <div class="popup-section">
@@ -217,19 +236,22 @@ function openPopup(arrCode, layer) {
 function updateKPIs() {
   if (!currentArr || !currentYear) return;
   const prix  = prixData.find(d => d.arrondissement === currentArr && d.annee === currentYear);
-  const loge  = logData.find(d => d.arrondissement === currentArr && d.annee === currentYear);
+  const loge  = logData.find(d => d.arrondissement === currentArr && d.annee === currentYear) ||
+                logData.filter(d => d.arrondissement === currentArr).sort((a,b) => b.annee - a.annee)[0];
   const delin = delinquanceData.find(d => d.arrondissement === currentArr && d.annee === currentYear);
   const dens  = densiteData.find(d => d.arrondissement === currentArr && d.annee === currentYear);
-  const vac   = vacanceData.find(d => d.arrondissement === currentArr && d.annee === currentYear);
+  const ev    = espacesVertsData.find(d => d.arrondissement === currentArr);
+  const air   = qualiteAirData.find(d => d.arrondissement === currentArr);
 
   kpiPrix.textContent   = fmt(prix ? Math.round(prix.prix_m2_median) : null, " €/m²");
   kpiVentes.textContent = "Ventes : " + fmt(prix?.nb_ventes);
 
   kpiLog.innerHTML = `
-    <div class="kpi-row">🏘️ <span class="kpi-label">Programmes</span><span>${loge?.nb_programmes ?? "—"}</span></div>
+    <div class="kpi-row">🏘️ <span class="kpi-label">Programmes sociaux</span><span>${loge?.nb_programmes ?? "—"}</span></div>
     <div class="kpi-row">👥 <span class="kpi-label">Densité</span><span>${dens?.densite_hab_km2 ? Math.round(dens.densite_hab_km2).toLocaleString("fr-FR") + " hab/km²" : "—"}</span></div>
-    <div class="kpi-row">🏚️ <span class="kpi-label">Vacance</span><span>${vac?.taux_vacance != null ? vac.taux_vacance.toFixed(1) + "%" : "—"}</span></div>
-    <div class="kpi-row">🚓 <span class="kpi-label">Délinquance</span><span>${delin?.score_delinquance != null ? delin.score_delinquance.toFixed(1) + "/10" : "—"}</span></div>`;
+    <div class="kpi-row">🚓 <span class="kpi-label">Délinquance</span><span>${delin?.score_delinquance != null ? delin.score_delinquance.toFixed(1) + "/10" : "—"}</span></div>
+    <div class="kpi-row">🌳 <span class="kpi-label">Espaces verts</span><span>${ev?.m2_par_habitant != null ? ev.m2_par_habitant.toFixed(1) + " m²/hab" : "—"}</span></div>
+    <div class="kpi-row">🌫️ <span class="kpi-label">NO2 (2018)</span><span>${air?.no2_moyen != null ? air.no2_moyen.toFixed(1) + " µg/m³" : "—"}</span></div>`;
 }
 
 // ── Graphique évolution ───────────────────────────────────────────────────────
@@ -250,11 +272,11 @@ function updateChart() {
       labels,
       datasets: [{
         data: values,
-        borderColor: "#00d4ff",
-        backgroundColor: "rgba(0,212,255,0.08)",
+        borderColor: "#2F6F8F",
+        backgroundColor: "rgba(47,111,143,0.08)",
         borderWidth: 2,
         pointRadius: 3,
-        pointBackgroundColor: "#00d4ff",
+        pointBackgroundColor: "#2F6F8F",
         tension: 0.3,
         fill: true
       }]
@@ -263,8 +285,8 @@ function updateChart() {
       responsive: true,
       plugins: { legend: { display: false } },
       scales: {
-        x: { ticks: { color: "#6b7a99", font: { size: 9 } }, grid: { color: "rgba(255,255,255,0.04)" } },
-        y: { ticks: { color: "#6b7a99", font: { size: 9 }, callback: v => v.toLocaleString("fr-FR") + " €" }, grid: { color: "rgba(255,255,255,0.04)" } }
+        x: { ticks: { color: "#8B95A1", font: { size: 9 } }, grid: { color: "rgba(27,34,48,0.05)" } },
+        y: { ticks: { color: "#8B95A1", font: { size: 9 }, callback: v => v.toLocaleString("fr-FR") + " €" }, grid: { color: "rgba(27,34,48,0.05)" } }
       }
     }
   });
@@ -307,12 +329,12 @@ async function runComparison() {
           ${row("Programmes soc.", a.logements_sociaux?.nb_programmes, b.logements_sociaux?.nb_programmes)}
           ${row("Densité hab/km²", a.densite?.densite_hab_km2 ? Math.round(a.densite.densite_hab_km2) : null, b.densite?.densite_hab_km2 ? Math.round(b.densite.densite_hab_km2) : null)}
           ${row("Délinquance /10", a.delinquance?.score_delinquance, b.delinquance?.score_delinquance)}
-          ${row("Vacance %", a.vacance?.taux_vacance, b.vacance?.taux_vacance, "%")}
+          ${row("Espaces verts m²/hab", a.espaces_verts?.m2_par_habitant, b.espaces_verts?.m2_par_habitant)}
+          ${row("NO2 µg/m³", a.qualite_air?.no2_moyen, b.qualite_air?.no2_moyen)}
         </table>
         <canvas id="chart-compare" height="130"></canvas>
       </div>`;
 
-    // Graphique comparaison
     setTimeout(() => {
       const tlA = (a.timeline || []).sort((x,y) => x.annee - y.annee);
       const tlB = (b.timeline || []).sort((x,y) => x.annee - y.annee);
@@ -324,16 +346,16 @@ async function runComparison() {
           data: {
             labels: labelsC,
             datasets: [
-              { label: getArrLabel(arr1), data: tlA.map(d => Math.round(d.prix_m2_median)), borderColor: "#00d4ff", backgroundColor: "rgba(0,212,255,0.05)", borderWidth: 2, tension: 0.3, pointRadius: 2 },
-              { label: getArrLabel(arr2), data: tlB.map(d => Math.round(d.prix_m2_median)), borderColor: "#f5a623", backgroundColor: "rgba(245,166,35,0.05)", borderWidth: 2, tension: 0.3, pointRadius: 2 }
+              { label: getArrLabel(arr1), data: tlA.map(d => Math.round(d.prix_m2_median)), borderColor: "#2F6F8F", backgroundColor: "rgba(47,111,143,0.05)", borderWidth: 2, tension: 0.3, pointRadius: 2 },
+              { label: getArrLabel(arr2), data: tlB.map(d => Math.round(d.prix_m2_median)), borderColor: "#D17A3E", backgroundColor: "rgba(209,122,62,0.05)", borderWidth: 2, tension: 0.3, pointRadius: 2 }
             ]
           },
           options: {
             responsive: true,
-            plugins: { legend: { labels: { color: "#9ca3af", font: { size: 9 } } } },
+            plugins: { legend: { labels: { color: "#5A6473", font: { size: 9 } } } },
             scales: {
-              x: { ticks: { color: "#6b7a99", font: { size: 8 } }, grid: { color: "rgba(255,255,255,0.04)" } },
-              y: { ticks: { color: "#6b7a99", font: { size: 8 }, callback: v => v.toLocaleString("fr-FR") + "€" }, grid: { color: "rgba(255,255,255,0.04)" } }
+              x: { ticks: { color: "#8B95A1", font: { size: 8 } }, grid: { color: "rgba(27,34,48,0.05)" } },
+              y: { ticks: { color: "#8B95A1", font: { size: 8 }, callback: v => v.toLocaleString("fr-FR") + "€" }, grid: { color: "rgba(27,34,48,0.05)" } }
             }
           }
         });
@@ -352,13 +374,13 @@ function initTimelineChart() {
   if (chartTimeline) chartTimeline.destroy();
   chartTimeline = new Chart(ctx, {
     type: "bar",
-    data: { labels: [], datasets: [{ data: [], backgroundColor: "#00d4ff", borderRadius: 3 }] },
+    data: { labels: [], datasets: [{ data: [], backgroundColor: "#2F6F8F", borderRadius: 3 }] },
     options: {
       responsive: true,
       plugins: { legend: { display: false } },
       scales: {
-        x: { ticks: { color: "#6b7a99", font: { size: 8 } }, grid: { display: false } },
-        y: { ticks: { color: "#6b7a99", font: { size: 8 }, callback: v => v.toLocaleString("fr-FR") + "€" }, grid: { color: "rgba(255,255,255,0.04)" } }
+        x: { ticks: { color: "#8B95A1", font: { size: 8 } }, grid: { display: false } },
+        y: { ticks: { color: "#8B95A1", font: { size: 8 }, callback: v => v.toLocaleString("fr-FR") + "€" }, grid: { color: "rgba(27,34,48,0.05)" } }
       }
     }
   });
@@ -373,7 +395,6 @@ function playTimeline() {
   document.getElementById("btn-play").textContent = "⏸ En cours...";
   document.getElementById("btn-play").disabled = true;
 
-  // Init chart avec toutes les années
   if (chartTimeline) {
     chartTimeline.data.labels = data.map(d => d.annee);
     chartTimeline.data.datasets[0].data = data.map(() => 0);
@@ -387,15 +408,13 @@ function playTimeline() {
     document.getElementById("timeline-year").textContent = d.annee;
     document.getElementById("timeline-prix").textContent = `Prix : ${Math.round(d.prix_m2_median).toLocaleString("fr-FR")} €/m²`;
 
-    // Mettre à jour la carte
     currentYear = d.annee;
     yearDisplay.textContent = d.annee;
     drawPolygons();
 
-    // Mettre à jour le graphique barre par barre
     if (chartTimeline) {
       chartTimeline.data.datasets[0].data[i] = Math.round(d.prix_m2_median);
-      chartTimeline.data.datasets[0].backgroundColor = data.map((_, idx) => idx === i ? "#f5a623" : "#00d4ff");
+      chartTimeline.data.datasets[0].backgroundColor = data.map((_, idx) => idx === i ? "#D17A3E" : "#2F6F8F");
       chartTimeline.update();
     }
 
@@ -447,17 +466,17 @@ async function main() {
   initMap();
   await loadGeoJSON();
 
-  const [arrRaw, prixRaw, logRaw, delinRaw, densRaw, vacRaw, typoRaw] = await Promise.all([
+  const [arrRaw, prixRaw, logRaw, delinRaw, densRaw, evRaw, airRaw, typoRaw] = await Promise.all([
     fetchJSON(`${API_BASE}/arrondissements`),
     fetchJSON(`${API_BASE}/prix_m2`),
     fetchJSON(`${API_BASE}/logements_sociaux`),
     fetchJSON(`${API_BASE}/delinquance`),
     fetchJSON(`${API_BASE}/densite`),
-    fetchJSON(`${API_BASE}/vacance`),
+    fetchJSON(`${API_BASE}/espaces_verts`),
+    fetchJSON(`${API_BASE}/qualite_air`),
     fetchJSON(`${API_BASE}/typologie`)
   ]);
 
-  // Arrondissements
   arrMeta = arrRaw.map(d => {
     const code = parseInt(d.code_arrondissement, 10);
     if (!Number.isInteger(code) || code < 1 || code > 20) return null;
@@ -465,18 +484,18 @@ async function main() {
     return { code, label: `${code}${suffix} — ${d.nom_officiel || d.nom || ""}` };
   }).filter(Boolean).sort((a,b) => a.code - b.code);
 
-  prixData       = prixRaw.map(d => ({ arrondissement: parseInt(d.arrondissement), annee: parseInt(d.annee), prix_m2_median: Number(d.prix_m2_median), nb_ventes: Number(d.nb_ventes) })).filter(d => !isNaN(d.arrondissement));
-  logData        = logRaw.map(d => ({ arrondissement: parseInt(d.arrondissement), annee: parseInt(d.annee), nb_programmes: Number(d.nb_programmes) })).filter(d => !isNaN(d.arrondissement));
-  delinquanceData= delinRaw.map(d => ({ arrondissement: parseInt(d.arrondissement), annee: parseInt(d.annee), score_delinquance: Number(d.score_delinquance) })).filter(d => !isNaN(d.arrondissement));
-  densiteData    = densRaw.map(d => ({ arrondissement: parseInt(d.arrondissement), annee: parseInt(d.annee), densite_hab_km2: Number(d.densite_hab_km2) })).filter(d => !isNaN(d.arrondissement));
-  vacanceData    = vacRaw.map(d => ({ arrondissement: parseInt(d.arrondissement), annee: parseInt(d.annee), taux_vacance: Number(d.taux_vacance) })).filter(d => !isNaN(d.arrondissement));
-  typologieData  = typoRaw.map(d => ({ arrondissement: parseInt(d.arrondissement), annee: parseInt(d.annee), part_T1: Number(d.part_T1), part_T2: Number(d.part_T2), part_T3: Number(d.part_T3), part_T4: Number(d.part_T4) })).filter(d => !isNaN(d.arrondissement));
+  prixData        = prixRaw.map(d => ({ arrondissement: parseInt(d.arrondissement), annee: parseInt(d.annee), prix_m2_median: Number(d.prix_m2_median), nb_ventes: Number(d.nb_ventes) })).filter(d => !isNaN(d.arrondissement));
+  logData         = logRaw.map(d => ({ arrondissement: parseInt(d.arrondissement), annee: parseInt(d.annee), nb_programmes: Number(d.nb_programmes) })).filter(d => !isNaN(d.arrondissement));
+  delinquanceData = delinRaw.map(d => ({ arrondissement: parseInt(d.arrondissement), annee: parseInt(d.annee), score_delinquance: Number(d.score_delinquance) })).filter(d => !isNaN(d.arrondissement));
+  densiteData     = densRaw.map(d => ({ arrondissement: parseInt(d.arrondissement), annee: parseInt(d.annee), densite_hab_km2: Number(d.densite_hab_km2) })).filter(d => !isNaN(d.arrondissement));
+  espacesVertsData = evRaw.map(d => ({ arrondissement: parseInt(d.arrondissement), m2_par_habitant: Number(d.m2_par_habitant), superficie_totale_m2: Number(d.superficie_totale_m2) })).filter(d => !isNaN(d.arrondissement));
+  qualiteAirData  = airRaw.map(d => ({ arrondissement: parseInt(d.arrondissement), no2_moyen: Number(d.no2_moyen), o3_moyen: Number(d.o3_moyen), pm10_moyen: Number(d.pm10_moyen) })).filter(d => !isNaN(d.arrondissement));
+  typologieData   = typoRaw.map(d => ({ arrondissement: parseInt(d.arrondissement), annee: parseInt(d.annee), part_T1: Number(d.part_T1), part_T2: Number(d.part_T2), part_T3: Number(d.part_T3), part_T4: Number(d.part_T4) })).filter(d => !isNaN(d.arrondissement));
 
   years = [...new Set(prixData.map(d => d.annee))].sort((a,b) => a-b);
-  currentYear = years[years.length - 1];
+  currentYear = years.includes(2024) ? 2024 : years[years.length - 1];
   yearSlider.min = years[0]; yearSlider.max = years[years.length - 1];
 
-  // Remplir tous les selects
   const selects = ["arr-select", "arr-compare-1", "arr-compare-2", "arr-timeline"];
   selects.forEach(id => {
     const el = document.getElementById(id);
@@ -488,7 +507,6 @@ async function main() {
     });
   });
 
-  // Select années comparaison
   const yearCompare = document.getElementById("year-compare");
   years.slice().reverse().forEach(y => {
     const opt = document.createElement("option");
@@ -497,7 +515,6 @@ async function main() {
     yearCompare.appendChild(opt);
   });
 
-  // Arrondissement comparaison B par défaut = 6
   const c2 = document.getElementById("arr-compare-2");
   if (c2) c2.value = "6";
 
@@ -511,7 +528,6 @@ async function main() {
   updateKPIs();
   updateChart();
 
-  // Choroplèthe par prix par défaut
   setChoropleth("prix");
 }
 

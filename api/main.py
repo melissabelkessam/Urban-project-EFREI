@@ -1,10 +1,18 @@
-from fastapi import FastAPI, Query, Header, HTTPException
+from fastapi import FastAPI, Query, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 import pandas as pd
 from pathlib import Path
 from typing import Optional
 
 app = FastAPI(title="Urban Data Explorer API", version="1.0.0")
+
+# ─── Quotas API — C2.1 ─────────────────────────────────────────────────────
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
@@ -33,11 +41,13 @@ def check_api_key(x_api_key: str = Header(None)):
 
 
 @app.get("/")
-def home():
+@limiter.limit("60/minute")
+def home(request: Request):
     return {
         "status": "ok",
         "message": "API Urban Data Explorer fonctionne !",
         "version": "1.0.0",
+        "quota": "30 requêtes/minute par IP sur les endpoints de données, 10/minute sur /admin",
         "endpoints": ["/prix_m2", "/logements_sociaux", "/delinquance", "/densite",
                       "/espaces_verts", "/qualite_air", "/typologie", "/arrondissements",
                       "/timeline", "/comparaison", "/admin/status"]
@@ -45,7 +55,8 @@ def home():
 
 
 @app.get("/admin/status")
-def admin_status(x_api_key: str = Header(None)):
+@limiter.limit("10/minute")
+def admin_status(request: Request, x_api_key: str = Header(None)):
     check_api_key(x_api_key)
     return {
         "status": "ok",
@@ -58,7 +69,8 @@ def admin_status(x_api_key: str = Header(None)):
 
 
 @app.get("/prix_m2")
-def prix_m2(annee: Optional[int] = None, arrondissement: Optional[int] = None):
+@limiter.limit("30/minute")
+def prix_m2(request: Request, annee: Optional[int] = None, arrondissement: Optional[int] = None):
     df = load_gold("prix_m2_par_arrondissement.csv")
     if annee:
         df = df[df["annee"] == annee]
@@ -68,7 +80,8 @@ def prix_m2(annee: Optional[int] = None, arrondissement: Optional[int] = None):
 
 
 @app.get("/typologie")
-def typologie(annee: Optional[int] = None):
+@limiter.limit("30/minute")
+def typologie(request: Request, annee: Optional[int] = None):
     df = load_gold("typologie_logements.csv")
     if annee:
         df = df[df["annee"] == annee]
@@ -76,7 +89,8 @@ def typologie(annee: Optional[int] = None):
 
 
 @app.get("/logements_sociaux")
-def logements_sociaux(annee: Optional[int] = None):
+@limiter.limit("30/minute")
+def logements_sociaux(request: Request, annee: Optional[int] = None):
     df = load_gold("logements_sociaux.csv")
     if annee:
         df = df[df["annee"] == annee]
@@ -84,7 +98,8 @@ def logements_sociaux(annee: Optional[int] = None):
 
 
 @app.get("/delinquance")
-def delinquance(annee: Optional[int] = None):
+@limiter.limit("30/minute")
+def delinquance(request: Request, annee: Optional[int] = None):
     df = load_gold("delinquance.csv")
     if annee:
         df = df[df["annee"] == annee]
@@ -92,7 +107,8 @@ def delinquance(annee: Optional[int] = None):
 
 
 @app.get("/densite")
-def densite(annee: Optional[int] = None):
+@limiter.limit("30/minute")
+def densite(request: Request, annee: Optional[int] = None):
     df = load_gold("densite.csv")
     if annee:
         df = df[df["annee"] == annee]
@@ -100,7 +116,8 @@ def densite(annee: Optional[int] = None):
 
 
 @app.get("/espaces_verts")
-def espaces_verts(arrondissement: Optional[int] = None):
+@limiter.limit("30/minute")
+def espaces_verts(request: Request, arrondissement: Optional[int] = None):
     df = load_gold("espaces_verts.csv")
     if arrondissement:
         df = df[df["arrondissement"] == arrondissement]
@@ -108,7 +125,8 @@ def espaces_verts(arrondissement: Optional[int] = None):
 
 
 @app.get("/qualite_air")
-def qualite_air(arrondissement: Optional[int] = None):
+@limiter.limit("30/minute")
+def qualite_air(request: Request, arrondissement: Optional[int] = None):
     df = load_gold("qualite_air.csv")
     if arrondissement:
         df = df[df["arrondissement"] == arrondissement]
@@ -116,13 +134,15 @@ def qualite_air(arrondissement: Optional[int] = None):
 
 
 @app.get("/arrondissements")
-def arrondissements():
+@limiter.limit("30/minute")
+def arrondissements(request: Request):
     df = pd.read_csv(SILVER / "arrondissements_clean.csv")
     return df.to_dict(orient="records")
 
 
 @app.get("/timeline")
-def timeline(arr: int = Query(..., description="Code arrondissement (1-20)")):
+@limiter.limit("30/minute")
+def timeline(request: Request, arr: int = Query(..., description="Code arrondissement (1-20)")):
     df = load_gold("prix_m2_par_arrondissement.csv")
     df_arr = df[df["arrondissement"] == arr].sort_values("annee")
     if df_arr.empty:
@@ -137,7 +157,9 @@ def timeline(arr: int = Query(..., description="Code arrondissement (1-20)")):
 
 
 @app.get("/comparaison")
+@limiter.limit("30/minute")
 def comparaison(
+    request: Request,
     arr1: int = Query(...),
     arr2: int = Query(...),
     annee: Optional[int] = None
